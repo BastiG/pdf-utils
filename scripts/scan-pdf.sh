@@ -15,12 +15,15 @@ function log() {
 	fi
 }
 
+LANG=deu
+HOCR2PDF=HocrConverter.py
 
 BATCH=1
 START_NAME=1
 FAXMODE=0
-OPEN_FILE=0
+OPEN_FILE=1
 USE_OCR=1
+OPT_AS_OCR_SOURCE=0
 
 # Print command usage
 function print_usage() {
@@ -29,8 +32,9 @@ USAGE: $(basename "${0}") [OPTIONS] [FILENAME]
 Options:
     -h|--help    This message
     -f|--fax     Fax mode
+    -q|--quality Optimize scanned pages
     -n|--no-ocr  Don't run character recognition
-    -o|--open    Open the scanned file
+    -o|--no-open Don't open the scanned file
     -s|--single  Don't use batch mode
 EOF
     exit 0
@@ -54,9 +58,13 @@ function evaluate_flag() {
             log "Optimize for faxing"
             FAXMODE=1
             ;;
-        o|--open)
+        q|--quality)
+            log "Optimize for viewing quality"
+            OPT_AS_OCR_SOURCE=1
+            ;;
+        o|--no-open)
             log "Open result file"
-            OPEN_FILE=1
+            OPEN_FILE=0
             ;;
         *)
             echo "Uknown flag - ignoring -${1}"
@@ -205,14 +213,31 @@ function do_convert() {
 ###############################################################################
 function do_ocr() {
 	OCR_FILE="${1}"
-	PDF_NAME="${2}"
+    OPT_FILE="${2}"
+    OCR_OPT_FILE="${3}"
+	PDF_NAME="${4}"
 
 	log "OCR ${OCR_FILE} to ${PDF_NAME}.pdf"
 
-    if [ ${USE_OCR} -eq 1 ]; then
-    	tesseract "${OCR_FILE}" "${PDF_NAME}" -l deu pdf
+    if [ ${FAXMODE} -eq 0 ]; then
+        if [ ${OPT_AS_OCR_SOURCE} -eq 0 ]; then
+            IMG_FILE="${OPT_FILE}"
+        else
+            IMG_FILE="${OCR_OPT_FILE}"
+        fi
     else
-        convert "${OCR_FILE}" "${PDF_NAME}.pdf"
+        IMG_FILE="${OCR_OPT_FILE}"
+    fi
+
+    if [ ${USE_OCR} -eq 1 ]; then
+#       OCR to PDF currently broken with gs, disabled for the time being
+#       http://bugs.ghostscript.com/show_bug.cgi?id=696116
+#    	tesseract "${OCR_FILE}" "${PDF_NAME}" -l deu pdf
+        tesseract "${OCR_FILE}" "${PDF_NAME}" -l "${LANG}" hocr
+        "${HOCR2PDF}" -V -I -i "${PDF_NAME}.hocr" -o "${PDF_NAME}.pdf" \
+            "${IMG_FILE}"
+    else
+        convert "${IMG_FILE}" "${PDF_NAME}.pdf"
     fi
 }
 
@@ -261,7 +286,7 @@ WANT_MORE=1
 INDEX=0
 PDFLIST=()
 
-echo "Press any key to start scanning"
+echo -e "Press any key to start scanning\a"
 stty -echo
 IFS= read -n1 kbd
 stty echo
@@ -288,8 +313,12 @@ while [ ${WANT_MORE} -eq 1 ]; do
 	END=$(date +%s.%N)
 	SCAN_DIFF=$(echo "($END - $START) / 1" | bc)
 
+    OCR_IN="${PAGE_FILE}-ocr-opt.tif"
+    if [ ${OPT_AS_OCR_SOURCE} -eq 1 ]; then
+        OCR_IN="${PAGE_FILE}-opt.tif"
+    fi
 	do_convert "${PAGE_FILE}.tif" "${PAGE_FILE}-ocr.tif" "${PAGE_FILE}-opt.tif" "${PAGE_FILE}-ocr-opt.tif"
-	do_ocr "${PAGE_FILE}-ocr-opt.tif" "${PAGE_FILE}.tmp"
+	do_ocr "${PAGE_FILE}-ocr.tif" "${PAGE_FILE}-opt.tif" "${PAGE_FILE}-ocr-opt.tif" "${PAGE_FILE}.tmp"
 
 	PDFLIST=("${PDFLIST[@]}" "${PAGE_FILE}.tmp.pdf")
 
@@ -297,7 +326,7 @@ while [ ${WANT_MORE} -eq 1 ]; do
 	VALID_INPUT=0
 	stty -echo
 	while [ ${BATCH} -eq 1 ] && [ ${VALID_INPUT} -eq 0 ]; do
-		echo -n "Continue scanning? [Y/n] "
+		echo -ne "Continue scanning?\a [Y/n] "
 		IFS= read -n1 kbd
 		case "${kbd}" in
 			y|Y)
@@ -341,5 +370,5 @@ if [ ${#PDFLIST[@]} -ne 0 ]; then
 fi
 
 if [ ${OPEN_FILE} -ne 0 ]; then
-    xdg-open "${FILENAME}.pdf"
+    xdg-open "${FILENAME}.pdf" >/dev/null 2>&1
 fi
