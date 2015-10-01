@@ -126,6 +126,8 @@ if [ -d "${TMPDIR}" ]; then
 fi
 mkdir "${TMPDIR}"
 
+PDFMARKS="${TMPDIR}/pdfmarks"
+
 ###############################################################################
 # Scan function
 # Parameters
@@ -250,7 +252,8 @@ function do_ocr() {
 ###############################################################################
 function do_fixpdf() {
 	PDF_IN=("${!1}")
-	PDF_OUT="${2}"
+    PDFMARKS="${2}"
+	PDF_OUT="${3}"
 
 	log "GS ${PDF_IN[*]} to ${PDF_OUT}"
 
@@ -264,7 +267,7 @@ function do_fixpdf() {
 
 	GS_OPTS="${GENERAL} ${DEVICE} ${AREA} ${FORMAT} ${IMAGE_OPTS}"
 
-	gs ${GS_OPTS} -sOutputFile="${PDF_OUT}" "${PDF_IN[@]}"
+	gs ${GS_OPTS} -sOutputFile="${PDF_OUT}" "${PDF_IN[@]}" "${PDFMARKS}"
 }
 
 ###############################################################################
@@ -285,6 +288,26 @@ function do_cleanup() {
 WANT_MORE=1
 INDEX=0
 PDFLIST=()
+
+TITLE="${FILENAME}"
+AUTHOR="$( grep "^$(id -urn)" /etc/passwd | cut -d ':' -f 5 )"
+SUBJECT="$( cut -d ' ' -f 2- <<< "${FILENAME}" )"
+DATE=$( cut -d ' ' -f 1 <<< "${FILENAME}" )
+while [ ${#DATE} -lt 8 ]; do
+    DATE="${DATE}0"
+done
+
+cat <<EOF > "${PDFMARKS}"
+[ /Title (${FILENAME})
+  /Author (${AUTHOR})
+  /Subject (${SUBJECT})
+  /Keywords ()
+  /ModDate (D:$(date +%Y%m%d%H%M%S))
+  /CreationDate (D:${DATE}000000)
+  /Creator (scan-pdf)
+  /Producer (scan-pdf)
+  /DOCINFO pdfmark
+EOF
 
 echo -e "Press any key to start scanning\a"
 stty -echo
@@ -355,7 +378,8 @@ done
 if [ ${#PDFLIST[@]} -eq 0 ]; then
 	echo "[ERROR] No scans found, no output generated"
 else
-	do_fixpdf "PDFLIST[@]" "${FILENAME}.pdf"
+#    PDFLIST=("${PDFLIST[@]}" "${PDFMARKS}")
+	do_fixpdf "PDFLIST[@]" "${PDFMARKS}" "${FILENAME}.pdf"
 fi
 
 do_cleanup "${TMPDIR}"
