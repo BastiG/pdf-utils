@@ -297,8 +297,13 @@ while [ ${#DATE} -lt 8 ]; do
     DATE="${DATE}0"
 done
 
+# pdfmarks will break on special chars if not encoded properly
+TITLE=$( echo "${TITLE}" | iconv -f utf-8 -t utf-16BE )
+AUTHOR=$( echo "${AUTHOR}" | iconv -f utf-8 -t utf-16BE )
+SUBJECT=$( echo "${SUBJECT}" | iconv -f utf-8 -t utf-16BE )
+
 cat <<EOF > "${PDFMARKS}"
-[ /Title (${FILENAME})
+[ /Title (${TITLE})
   /Author (${AUTHOR})
   /Subject (${SUBJECT})
   /Keywords ()
